@@ -13,10 +13,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: MOTION_FPS_Android
-
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -27,15 +23,33 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Extract Android project
+        id: project
+        shell: bash
+        run: |
+          unzip -q MOTION_FPS_Android_Project.zip -d extracted
+
+          PROJECT_DIR=$(find "$GITHUB_WORKSPACE/extracted" \
+            -type f \( -name settings.gradle.kts -o -name settings.gradle \) \
+            -print -quit | xargs -r dirname)
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: No Gradle settings file found inside the ZIP."
+            find extracted -maxdepth 4 -type f
+            exit 1
+          fi
+
+          echo "Project found at: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
       - name: Configure Android SDK
         shell: bash
-        working-directory: .
         run: |
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager was not found."
+            echo "ERROR: sdkmanager not found."
             exit 1
           fi
 
@@ -50,12 +64,14 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+        run: |
+          cd "${{ steps.project.outputs.project_dir }}"
+          gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: MOTION-FPS-debug-APK
-          path: MOTION_FPS_Android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.project.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           
